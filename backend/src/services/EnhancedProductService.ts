@@ -61,22 +61,40 @@ export class EnhancedProductService extends ProductService {
       
     } catch (error) {
       console.warn('AI search failed, falling back to basic search:', error);
-      
-      // Fallback to basic search
-      const basicResult = await this.searchProducts(query, filters);
-      const searchTime = Date.now() - startTime;
-      
-      return {
-        ...basicResult,
-        processedQuery: {
-          features: [],
-          keywords: query.toLowerCase().split(' '),
-          explanation: 'Used basic search due to AI service unavailability',
-          confidence: 0.3
-        },
-        searchTime,
-        usedAI: false
-      };
+      try {
+        const basicResult = await this.searchProducts(query, filters);
+        const searchTime = Date.now() - startTime;
+        return {
+          ...basicResult,
+          processedQuery: {
+            features: [],
+            keywords: query.toLowerCase().split(/\s+/).filter(Boolean),
+            explanation: 'Used basic search due to AI service unavailability',
+            confidence: 0.3
+          },
+          searchTime,
+          usedAI: false
+        };
+      } catch (basicError) {
+        // As a last resort, return an empty successful result to avoid 500s upstream
+        const searchTime = Date.now() - startTime;
+        return {
+          query,
+          processedQuery: {
+            features: [],
+            keywords: query.toLowerCase().split(/\s+/).filter(Boolean),
+            explanation: 'No results due to temporary service issue; please try again later',
+            confidence: 0.1
+          },
+          products: [],
+          total: 0,
+          page: filters?.page || 1,
+          totalPages: 0,
+          searchTime,
+          usedAI: false,
+          explanation: 'Search temporarily unavailable'
+        };
+      }
     }
   }
 

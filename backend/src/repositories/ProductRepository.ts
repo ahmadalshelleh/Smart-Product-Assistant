@@ -100,24 +100,59 @@ export class ProductRepository implements IProductRepository {
 
     // Build the query with proper projection for text score sorting
     let productQuery = Product.find(query);
-    
+
     // Add score projection when sorting by text relevance
     // MongoDB requires projecting the textScore when sorting by it for consistent results
     if (filters.sortBy === 'relevance' && query.$text) {
       productQuery = productQuery.select({ score: { $meta: 'textScore' } });
     }
-    
-    const [products, total] = await Promise.all([
-      productQuery.sort(sort).skip(skip).limit(limit),
-      Product.countDocuments(query)
-    ]);
 
-    return {
-      products,
-      total,
-      page,
-      totalPages: Math.ceil(total / limit)
-    };
+    try {
+      const [products, total] = await Promise.all([
+        productQuery.sort(sort).skip(skip).limit(limit),
+        Product.countDocuments(query)
+      ]);
+      return {
+        products,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit)
+      };
+    } catch (err: any) {
+      // Fallback: If text index is missing, use regex OR matching across key fields
+      const isTextIndexError = typeof err?.message === 'string' && err.message.includes('text index required');
+      const hasTextSearch = Boolean(query.$text);
+      if (hasTextSearch && isTextIndexError) {
+        const keywords = criteria.keywords as string[];
+        delete query.$text;
+        if (keywords && keywords.length) {
+          const regex = new RegExp(keywords.map(k => k.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')).join('|'), 'i');
+          query.$or = [
+            { name: regex },
+            { description: regex },
+            { brand: regex },
+            { category: regex }
+          ];
+        }
+
+        // Remove text score sorting if present
+        if (filters.sortBy === 'relevance') {
+          sort = { createdAt: -1 };
+        }
+
+        const [products, total] = await Promise.all([
+          Product.find(query).sort(sort).skip(skip).limit(limit),
+          Product.countDocuments(query)
+        ]);
+        return {
+          products,
+          total,
+          page,
+          totalPages: Math.ceil(total / limit)
+        };
+      }
+      throw err;
+    }
   }
 
   async create(product: Partial<IProduct>): Promise<IProduct> {
