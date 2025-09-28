@@ -1,0 +1,17 @@
+node_modules
+npm-debug.log
+Dockerfile
+.dockerignore
+.env
+.env.*
+.git
+.gitignore
+coverage
+logs
+*.log
+src/**/*.test.*
+**/.DS_Store
+
+# Ignore local build artifacts; final image copies dist from builder stage
+/dist
+
